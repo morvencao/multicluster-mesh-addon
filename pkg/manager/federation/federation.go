@@ -63,19 +63,6 @@ func NewMeshFederationController(
 			}, meshFederationInformer.Informer()).
 		WithFilteredEventsInformersQueueKeyFunc(func(obj runtime.Object) string {
 			key, _ := cache.MetaNamespaceKeyFunc(obj)
-			return key + "-ossm-federation"
-		}, func(obj interface{}) bool {
-			accessor, err := meta.Accessor(obj)
-			if err != nil {
-				return false
-			}
-			// only enqueue configmap with label "mesh.open-cluster.io/federation=true"
-			labels := accessor.GetLabels()
-			lv, ok := labels[constants.FederationResourcesLabelKey]
-			return ok && (lv == "true") && strings.Contains(accessor.GetName(), "-ep4-")
-		}, configMapInformer.Informer()).
-		WithFilteredEventsInformersQueueKeyFunc(func(obj runtime.Object) string {
-			key, _ := cache.MetaNamespaceKeyFunc(obj)
 			return key + "-istio-federation"
 		}, func(obj interface{}) bool {
 			accessor, err := meta.Accessor(obj)
@@ -192,97 +179,6 @@ func (c *meshFederationController) sync(ctx context.Context, syncCtx factory.Syn
 		}
 
 		return nil
-	case strings.HasSuffix(key, "-ossm-federation"):
-		klog.V(2).Infof("Reconciling federation cm resources %q", key)
-		key = strings.TrimSuffix(key, "-ossm-federation")
-		namespace, name, err := cache.SplitMetaNamespaceKey(key)
-		if err != nil {
-			// ignore addon whose key is not in format: namespace/name
-			return nil
-		}
-
-		//  retrieve smcp name and peer mesh name from the reconciling configmap name
-		strSplit := strings.Split(name, "-ep4-")
-		if len(strSplit) != 2 {
-			return fmt.Errorf("invalid federation resource name: %s", name)
-		}
-		currentSMCPName := strSplit[0]
-		peerMeshName := strSplit[1]
-
-		meshList, err := c.meshClient.MeshV1alpha1().Meshes("").List(ctx, metav1.ListOptions{})
-		if err != nil {
-			return err
-		}
-
-		currentMeshName, currentMeshCluster, currentMeshNamespace, currentMeshTrustDomain, peerMeshCluster, peerMeshNamespace := "", "", "", "", "", ""
-		for _, mesh := range meshList.Items {
-			meshName := ""
-			discoveriedMesh, ok := mesh.GetLabels()[constants.LabelKeyForDiscoveriedMesh]
-			if ok && discoveriedMesh == "true" {
-				meshName = mesh.Spec.Cluster + "-" + mesh.Spec.ControlPlane.Namespace + "-" + currentSMCPName
-			} else {
-				meshName = currentSMCPName
-			}
-			if mesh.GetName() == meshName {
-				currentMeshName = meshName
-				currentMeshCluster = mesh.Spec.Cluster
-				currentMeshNamespace = mesh.Spec.ControlPlane.Namespace
-				currentMeshTrustDomain = mesh.Spec.MeshConfig.TrustDomain
-			} else if mesh.GetName() == peerMeshName {
-				peerMeshCluster = mesh.Spec.Cluster
-				peerMeshNamespace = mesh.Spec.ControlPlane.Namespace
-			}
-			if currentMeshCluster != "" && peerMeshCluster != "" {
-				break
-			}
-		}
-
-		endpointConfigMap, err := c.configMapLister.ConfigMaps(namespace).Get(name)
-		switch {
-		case errors.IsNotFound(err):
-			// double check to make sure mesh federation configmap is deleted, because the -ep4- configmap may be removed before we can check the deletion timestamp
-			klog.V(2).Infof("removing mesh federation resources: configmap %q/%q", peerMeshCluster, peerMeshName+"-to-"+currentMeshName)
-			return c.kubeClient.CoreV1().ConfigMaps(peerMeshCluster).Delete(ctx, peerMeshName+"-to-"+currentMeshName, metav1.DeleteOptions{})
-		case err != nil:
-			return err
-		}
-
-		// remove mesh federation configuration
-		if !endpointConfigMap.DeletionTimestamp.IsZero() {
-			klog.V(2).Infof("removing mesh federation resources: configmap %q/%q", peerMeshCluster, peerMeshName+"-to-"+currentMeshName)
-			return c.kubeClient.CoreV1().ConfigMaps(peerMeshCluster).Delete(ctx, peerMeshName+"-to-"+currentMeshName, metav1.DeleteOptions{})
-		}
-
-		meshCAConfigMap, err := c.configMapLister.ConfigMaps(namespace).Get(currentMeshNamespace + "-mesh-ca")
-		switch {
-		case errors.IsNotFound(err):
-			return nil
-		case err != nil:
-			return err
-		}
-
-		// create configmap that contains mesh federation information
-		federationConfigMap := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      peerMeshName + "-to-" + currentMeshName,
-				Namespace: peerMeshCluster,
-				Labels: map[string]string{
-					constants.FederationResourcesLabelKey: "true",
-				},
-			},
-			Data: map[string]string{ // need to reverse the source and target mesh in federation configmap
-				constants.FederationConfigMapMeshPeerCALabelKey:          meshCAConfigMap.Data[constants.IstioCAConfigmapKey],
-				constants.FederationConfigMapMeshPeerEndpointLabelKey:    endpointConfigMap.Data[constants.FederationConfigMapMeshPeerEndpointLabelKey],
-				constants.FederationConfigMapMeshPeerTrustDomainLabelKey: currentMeshTrustDomain,
-				constants.FederationConfigMapMeshPeerNamespaceLabelKey:   currentMeshNamespace,
-				constants.FederationConfigMapMeshNamespaceLabelKey:       peerMeshNamespace,
-			},
-		}
-
-		klog.V(2).Infof("applying mesh federation resources: configmap %q/%q", peerMeshCluster, peerMeshName+"-to-"+currentMeshName)
-		_, _, err = resourceapply.ApplyConfigMap(ctx, c.kubeClient.CoreV1(), c.recorder, federationConfigMap)
-
-		return err
 	default:
 		namespace, name, err := cache.SplitMetaNamespaceKey(key)
 		if err != nil {

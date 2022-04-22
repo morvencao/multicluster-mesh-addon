@@ -12,6 +12,6 @@ resources:
 images:
 - name: multicluster-mesh-addon
   newName: quay.io/morvencao/multicluster-mesh-addon
-  newTag: latest
+  newTag: ocm
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization

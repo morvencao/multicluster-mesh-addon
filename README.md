@@ -1,12 +1,12 @@
 # Multicluster Mesh Addon
 
-The multicluster-mesh-addon is an enhanced service mesh addon created with [addon-framework](http://github.com/open-cluster-management-io/addon-framework), it is used to manage(discovery, deploy and federate) service meshes across multiple clusters in [Red Hat Advanced Cluster Management for Kubernetes](https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/). With multicluster-mesh-addon, you can unify the configuration and operation of your services spanning from single cluster to multiple clusters in hybrid cloud.
+The multicluster-mesh-addon is an enhanced service mesh addon created with [addon-framework](http://github.com/open-cluster-management-io/addon-framework), it is used to manage(discovery, deploy and federate) service meshes across multiple clusters in [Open Cluster Management(OCM)](https://open-cluster-management.io/). With multicluster-mesh-addon, you can unify the configuration and operation of your services spanning from single cluster to multiple clusters in hybrid cloud.
 
 ![multicluster-mesh-addon-overview](assets/multicluster-mesh-addon.png)
 
 ## Core Concepts
 
-To simplify the configuration and operation of service meshes, we created the following three [custom resource definitions (CRDs)](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/) than you can configure from the hub cluster of Red Hat Advanced Cluster Management for Kubernetes. Behind the scenes, the multicluster-mesh-addon translates these high level objects into low level istio resources and then applied into the managed clusters.
+To simplify the configuration and operation of service meshes, we created the following three [custom resource definitions (CRDs)](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/) than you can configure from the OCM hub cluster. Behind the scenes, the multicluster-mesh-addon translates these high level objects into low level istio resources and then applied into the managed clusters.
 
 1. **Mesh** - a `mesh` resource is mapping to a physical service mesh in a managed cluster, it contains the desired state and status of the backend service mesh.
 
@@ -70,14 +70,31 @@ To simplify the configuration and operation of service meshes, we created the fo
         trustType: Complete
     ```
 
+## Run Demo
+
+To run the demo with KinD cluster, make sure the following command line tools are installed:
+
+- git
+- kubectl
+- [kind](https://kind.sigs.k8s.io/)
+- docker
+- envsubst
+- [istioctl](https://istio.io/latest/docs/setup/getting-started/#download)
+
+then execute the following command:
+
+```bash
+cd demo && ./demo
+```
+
 ## Getting Started
 
 ### Prerequisites
 
 - Ensure [docker](https://docs.docker.com/get-started) 18.03+ is installed.
 - Ensure [golang](https://golang.org/doc/install) 1.17+ is installed.
-- Prepare an environment of [Red Hat Advanced Cluster Management for Kubernetes](https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/) and login to the hub cluster with `oc` command line tool.
-- Make sure at least one managed cluster imported to the hub cluster of Red Hat Advanced Cluster Management for Kubernetes.
+- Prepare an environment of [OCM](https://open-cluster-management.io/getting-started/core/) and login to the hub cluster with `kubectl` command line tool.
+- Make sure at least one managed cluster imported to the OCM hub cluster.
 - For mesh federation support, make sure at least two managed clusters are imported and the cloud provider must support the network load balancer IP so that the meshes spanning across managed clusters can be connected.
 
 ### Build and Deploy
@@ -85,28 +102,18 @@ To simplify the configuration and operation of service meshes, we created the fo
 1. Build and push docker image:
 
     ```bash
-    make docker-build docker-push IMAGE=quay.io/<your_quayio_username>/multicluster-mesh-addon:latest
+    make docker-build docker-push IMAGE=quay.io/<your_quayio_username>/multicluster-mesh-addon:ocm
     ```
 
 2. Deploy the multicluster-mesh-addon to hub cluster:
 
     ```
-    make deploy IMAGE=quay.io/<your_quayio_username>/multicluster-mesh-addon:latest
+    make deploy IMAGE=quay.io/<your_quayio_username>/multicluster-mesh-addon:ocm
     ```
 
 ## How to use
 
-_Note_: For now, [Openshift Service Mesh](https://docs.openshift.com/container-platform/4.6/service_mesh/v2x/ossm-about.html) on Openshift managed cluster(s) and [upstream Istio](https://istio.io/) on *KS managed cluster(s) are supported.
-
 1. Mesh Discovery:
-
-    If you have installed an Openshift Service Mesh in an openshift managed cluster, then you should find a mesh resource created in its namespace of hub cluster:
-
-    ```bash
-    # oc -n ocp1 get mesh
-    NAME                       CLUSTER    VERSION    PROVIDER                PEERS    AGE
-    ocp1-istio-system-basic    ocp1       v2.1       Openshift Service Mesh           18s
-    ```
 
     If you have installed an istio service mesh in a managed cluster, then you should also find a mesh resource created in its namespace of hub cluster:
 
@@ -118,28 +125,9 @@ _Note_: For now, [Openshift Service Mesh](https://docs.openshift.com/container-p
 
 2. Mesh Deployment:
 
-    To deploy new Openshift Service Mesh to managed clusters, create a `meshdeployment` resource in hub cluster by specifying `Openshift Service Mesh` meshProvider and selecting the openshift managed cluster(s). For example, create the following `meshdeployment` resource to deploy new Openshift Service Mesh to Openshift managed cluster `ocp1` and `ocp2`:
+    To deploy new istio service mesh(es) to managed clusters, create a `meshdeployment` resource by specifying `Upstream Istio` meshProvider and selecting the managed cluster(s). For example, create the following `meshdeployment` resource to deploy new istio service mesh(es) to managed cluster `eks1` and `eks1`:
 
-    ```bash
-    cat << EOF | oc apply -f -
-    apiVersion: mesh.open-cluster-management.io/v1alpha1
-    kind: MeshDeployment
-    metadata:
-      name: ossm
-      namespace: open-cluster-management
-    spec:
-      clusters: ["ocp1", "ocp2"]
-      controlPlane:
-        components: ["prometheus", "istio-discovery", "istio-ingress", "mesh-config", "telemetry-common", "tracing"]
-        namespace: mesh-system
-        profiles: ["default"]
-        version: v2.1
-      meshMemberRoll: ["bookinfo"]
-      meshProvider: Openshift Service Mesh
-    EOF
-    ```
-
-    To deploy new istio service mesh(es) to managed clusters, create a `meshdeployment` resource by specifying `Upstream Istio` meshProvider and selecting the *KS managed cluster(s). For example, create the following `meshdeployment` resource to deploy new istio service mesh(es) to managed cluster `eks1` and `eks1`:
+    _Note_: For now, the multicluster-mesh-addon supports [upstream Istio](https://istio.io/) mesh provider.
 
     ```bash
     cat << EOF | oc apply -f -
@@ -167,34 +155,11 @@ _Note_: For now, [Openshift Service Mesh](https://docs.openshift.com/container-p
     NAMESPACE   NAME          CLUSTER   VERSION   PROVIDER                 PEERS   AGE
     eks1        eks1-istio    eks1      1.13.2    Upstream Istio                   13s
     eks2        eks2-istio    eks2      1.13.2    Upstream Istio                   13s
-    ocp1        ocp1-ossm     ocp1      v2.1      Openshift Service Mesh           57s
-    ocp2        ocp2-ossm     ocp2      v2.1      Openshift Service Mesh           57s
     ```
 
 4. Mesh Federation:
 
-    To federate the Openshift Service Mesh in Openshift managed clusters, create a `meshfederation` resource in hub cluster by specifying the peers of Openshift Service Mesh and trustType of `Limited`. For example, federate `ocp1-ossm` and `ocp2-ossm` created in last step by creating a `meshfederation` resource with the following command:
-
-    ```bash
-    cat << EOF | oc apply -f -
-    apiVersion: mesh.open-cluster-management.io/v1alpha1
-    kind: MeshFederation
-    metadata:
-      name: ossm-federation
-      namespace: open-cluster-management
-    spec:
-      meshPeers:
-      - peers:
-        - name: ocp1-ossm
-          cluster: ocp1
-        - name: ocp2-ossm
-          cluster: ocp2
-      trustConfig:
-        trustType: Limited
-    EOF
-    ```
-
-    To federate the istio service meshes in *KS managed clusters, create a `meshfederation` resource in hub cluster by specifying the peers of istio mesh and and trustType of `Complete`. For example, federate `eks1-istio` and `eks1-istio` created in last step by creating a `meshfederation` resource with the following command:
+    To federate the istio service meshes in managed clusters, create a `meshfederation` resource in hub cluster by specifying the peers of istio mesh and and trustType of `Complete`. For example, federate `eks1-istio` and `eks1-istio` created in last step by creating a `meshfederation` resource with the following command:
 
     ```bash
     cat << EOF | oc apply -f -
@@ -215,25 +180,13 @@ _Note_: For now, [Openshift Service Mesh](https://docs.openshift.com/container-p
     EOF
     ```
 
-    Finally, deploy [Bookinfo application](https://istio.io/latest/docs/examples/bookinfo/) spanning across managed clusters with the following different instructions to verify the federated meshes are working as expected:
+    Finally, deploy [Bookinfo application](https://istio.io/latest/docs/examples/bookinfo/) spanning across managed clusters with the [instruction]((mesh-federation-verify-istio.md)) to verify the federated meshes are working as expected.
 
     _Note:_ currently the verify steps have to be executed in the managed cluster, the work for the service discovery and service federation is still in progress.
-
-    - [Mesh federation verify for Openshift Service Mesh](mesh-federation-verify-ossm.md)
-    - [Mesh federation verify for upstream Istio](mesh-federation-verify-istio.md)
 
 ## TroubleShooting
 
 If the traffic across meshes/clusters can't be routed successfully after creating `MeshFederation` resource, follow the following steps to find the root cause for different mesh providers:
-
-1. For Openshift Service Mesh provider:
-
-  - Make sure the services are exported from source mesh and imported into target mesh.
-  - Make sure the `ServiceMeshPeer` resource is created and its remotes connected status is `true` for each peer mesh.
-  - Make sure the mesh CA are exchanged by checking the CA configmap named `<peer-mesh-name>-ca-root-cert` is created in each mesh.
-  - Make sure the ingress gateway named `<peer-mesh-name>-ingress` and egress gateway named `<peer-mesh-name>-egress` for peer mesh traffic is created in each mesh.
-
-2. For upstream Istio provider:
 
   - Make sure the services are imported to target mesh cluster by creating corresponding `ServiceEntry` resources.
   - Make sure the eastwest gateway for each mesh is created and has a public loader balancer IP allocated.

@@ -97,10 +97,6 @@ func (c *meshDeploymentController) sync(ctx context.Context, syncCtx factory.Syn
 		if meshConfig == nil {
 			meshConfig = &meshv1alpha1.MeshConfig{}
 		}
-		if meshDeployment.Spec.MeshProvider == meshv1alpha1.MeshProviderOpenshift {
-			// for OSSM, trust domain for each mesh need to be different, since the self generated CA for each mesh is different
-			meshConfig.TrustDomain = fmt.Sprintf("%s.local", meshName)
-		}
 		mesh := &meshv1alpha1.Mesh{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      meshName,
